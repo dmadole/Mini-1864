@@ -1,0 +1,130 @@
+/* Copyright (C) 2025 by David Madole
+
+   This program is free software; you can redistribute it and/or
+   modify it under the terms of the GNU General Public License as
+   published by the Free Software Foundation; either version 2 of the
+   License, or (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful, but
+   WITHOUT ANY WARRANTY; without clock3 the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111 USA. */
+
+
+/* This is a replacement for the sound section of the RCA CDP1864 video chip.
+   It stands alone from any of the video generation circuity, implementing
+   its own control logic for N2 and MRD for controlling latch writes.
+
+name      SOUND;
+partno    SOUND;
+revision  A;
+date      05/01/25;
+designer  David Madole;
+company   github.com/dmadole;
+assembly  Mini/1864;
+location  U1;
+device    V750C;
+
+
+/* INPUTS */
+
+pin 1 =       TPB;
+pin [2..9] = [BUS0..7];
+pin 10 =      N2;
+pin 11 =     !MRD;
+pin 13 =      ENABLE;
+
+
+/* The outputs and buried nodes are chosen so that there are enough product
+   terms for each register. In particular, COUNT2 needs nine terms, so it
+   has to be able to use combined terms. So, we put that on pin 15, which has
+   10 combined terms (which means we can't use buried node 26). COUNT3 needs
+   eight and each further one needs one less, so we line those up accordingly
+   as well. The LATCH pins have few terms so they just use what is left. */
+
+/* OUTPUTS */
+
+pin [14,15,18..22,16,17] = [COUNT1..9];
+pin 23 =                    OUTPUT;
+
+/* BURIED NODES */
+
+pinnode [34] =        [COUNT0];
+pinnode [25,27..33] = [LATCH0..7];
+
+
+/* We don't need syncronous preset on any register, so get that out of the
+   way explicitly so that the compiler doesn't generate a warning. Also,
+   every register is clocked by TPB so take care of overall now as well. */
+   
+[LATCH0..7,COUNT0..9,OUTPUT].sp = 'b'0 ;
+[LATCH0..7,COUNT0..9,OUTPUT].ckmux = TPB ;
+
+
+/* LATCH holds the current divisor value, it is written to from BUS when N2
+   is high during a memory read cycle, which is an output to port 4-7. Since
+   we are using T flip-flops we assert T for any bit which needs to change
+   at the next TPB strobe, and they will always hold all other values. */
+
+CLOCK = N2 & MRD;
+
+LATCH0.t = CLOCK & (BUS0 $ LATCH0);
+LATCH1.t = CLOCK & (BUS1 $ LATCH1);
+LATCH2.t = CLOCK & (BUS2 $ LATCH2);
+LATCH3.t = CLOCK & (BUS3 $ LATCH3);
+LATCH4.t = CLOCK & (BUS4 $ LATCH4);
+LATCH5.t = CLOCK & (BUS5 $ LATCH5);
+LATCH6.t = CLOCK & (BUS6 $ LATCH6);
+LATCH7.t = CLOCK & (BUS7 $ LATCH7);
+
+
+/* COUNT is the frequency divider counter, which is ten bits because is has
+   a divide-by-four prescaler. Treating it as one counter rather than two
+   makes the logic a little easier. We need to load the value of LATCH into
+   COUNT at every TPB when COUNT is zero. The two lowest prescaler bits are
+   always set to 11 when the other bits are loaded. */
+
+ZERO = ![COUNT0..9]:& ;
+
+append COUNT0.t = ZERO ;
+append COUNT1.t = ZERO ;
+append COUNT2.t = ZERO & LATCH0 ;
+append COUNT3.t = ZERO & LATCH1 ;
+append COUNT4.t = ZERO & LATCH2 ;
+append COUNT5.t = ZERO & LATCH3 ;
+append COUNT6.t = ZERO & LATCH4 ;
+append COUNT7.t = ZERO & LATCH5 ;
+append COUNT8.t = ZERO & LATCH6 ;
+append COUNT9.t = ZERO & LATCH7 ;
+
+
+/* When COUNT is not being loaded, it needs to count down. Since we are using
+   T flip-flops, this is easy, we just need to set T whenever all the lower
+   bits of COUNT are zero, excepting bit 0 which toggles on every TPB. */
+
+append COUNT0.t = !ZERO ;
+append COUNT1.t = !ZERO & ![COUNT0..0]:& ;
+append COUNT2.t = !ZERO & ![COUNT1..0]:& ;
+append COUNT3.t = !ZERO & ![COUNT2..0]:& ;
+append COUNT4.t = !ZERO & ![COUNT3..0]:& ;
+append COUNT5.t = !ZERO & ![COUNT4..0]:& ;
+append COUNT6.t = !ZERO & ![COUNT5..0]:& ;
+append COUNT7.t = !ZERO & ![COUNT6..0]:& ;
+append COUNT8.t = !ZERO & ![COUNT7..0]:& ;
+append COUNT9.t = !ZERO & ![COUNT8..0]:& ;
+
+
+/* OUTPUT is the divided-by-two output of the frequency divider counter, so
+   we just toggle it every time the frequency divider is zero. Note that when
+   LATCH is loaded with zero, this will happen on every TPB, when latch is
+   one, it will happen every other TPB, and so on. The enable pin, when not
+   asserted, holds the output in reset so that it stays low. */
+
+OUTPUT.t =  ZERO ;
+OUTPUT.ar = !ENABLE ;
+
+/* The End */
